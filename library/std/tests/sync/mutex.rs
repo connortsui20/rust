@@ -17,8 +17,8 @@ nonpoison_and_poison_unwrap_test!(
         use locks::Mutex;
 
         let m = Mutex::new(());
-        drop(maybe_unwrap!(m.lock()));
-        drop(maybe_unwrap!(m.lock()));
+        drop(maybe_unwrap(m.lock()));
+        drop(maybe_unwrap(m.lock()));
     }
 );
 
@@ -34,7 +34,7 @@ nonpoison_and_poison_unwrap_test!(
 
         fn inc(m: &Mutex<u32>) {
             for _ in 0..J {
-                *maybe_unwrap!(m.lock()) += 1;
+                *maybe_unwrap(m.lock()) += 1;
             }
         }
 
@@ -58,7 +58,7 @@ nonpoison_and_poison_unwrap_test!(
         for _ in 0..2 * K {
             rx.recv().unwrap();
         }
-        assert_eq!(*maybe_unwrap!(m.lock()), J * K * 2);
+        assert_eq!(*maybe_unwrap(m.lock()), J * K * 2);
     }
 );
 
@@ -96,7 +96,7 @@ nonpoison_and_poison_unwrap_test!(
         use locks::Mutex;
 
         let m = Mutex::new(NonCopy(10));
-        assert_eq!(maybe_unwrap!(m.into_inner()), NonCopy(10));
+        assert_eq!(maybe_unwrap(m.into_inner()), NonCopy(10));
     }
 );
 
@@ -116,7 +116,7 @@ nonpoison_and_poison_unwrap_test!(
         let m = Mutex::new(Foo(num_drops.clone()));
         assert_eq!(num_drops.load(Ordering::SeqCst), 0);
         {
-            let _inner = maybe_unwrap!(m.into_inner());
+            let _inner = maybe_unwrap(m.into_inner());
             assert_eq!(num_drops.load(Ordering::SeqCst), 0);
         }
         assert_eq!(num_drops.load(Ordering::SeqCst), 1);
@@ -129,8 +129,8 @@ nonpoison_and_poison_unwrap_test!(
         use locks::Mutex;
 
         let mut m = Mutex::new(NonCopy(10));
-        *maybe_unwrap!(m.get_mut()) = NonCopy(20);
-        assert_eq!(maybe_unwrap!(m.into_inner()), NonCopy(20));
+        *maybe_unwrap(m.get_mut()) = NonCopy(20);
+        assert_eq!(maybe_unwrap(m.into_inner()), NonCopy(20));
     }
 );
 
@@ -144,7 +144,7 @@ nonpoison_and_poison_unwrap_test!(
 
         let m = Mutex::new(Cloneable(10));
 
-        assert_eq!(maybe_unwrap!(m.get_cloned()), Cloneable(10));
+        assert_eq!(maybe_unwrap(m.get_cloned()), Cloneable(10));
     }
 );
 
@@ -159,9 +159,9 @@ nonpoison_and_poison_unwrap_test!(
         {
             let m = Mutex::new(init());
 
-            assert_eq!(*maybe_unwrap!(m.lock()), init());
-            maybe_unwrap!(m.set(value()));
-            assert_eq!(*maybe_unwrap!(m.lock()), value());
+            assert_eq!(*maybe_unwrap(m.lock()), init());
+            maybe_unwrap(m.set(value()));
+            assert_eq!(*maybe_unwrap(m.lock()), value());
         }
 
         inner(|| NonCopy(10), || NonCopy(20));
@@ -169,6 +169,7 @@ nonpoison_and_poison_unwrap_test!(
     }
 );
 
+// Ensure that old values that are replaced by `set` are correctly dropped.
 nonpoison_and_poison_unwrap_test!(
     name: test_set_drop,
     test_body: {
@@ -186,7 +187,7 @@ nonpoison_and_poison_unwrap_test!(
         assert_eq!(num_drops.load(Ordering::SeqCst), 0);
 
         let different = Foo(Arc::new(AtomicUsize::new(42)));
-        maybe_unwrap!(m.set(different));
+        maybe_unwrap(m.set(different));
         assert_eq!(num_drops.load(Ordering::SeqCst), 1);
     }
 );
@@ -202,9 +203,9 @@ nonpoison_and_poison_unwrap_test!(
         {
             let m = Mutex::new(init());
 
-            assert_eq!(*maybe_unwrap!(m.lock()), init());
-            assert_eq!(maybe_unwrap!(m.replace(value())), init());
-            assert_eq!(*maybe_unwrap!(m.lock()), value());
+            assert_eq!(*maybe_unwrap(m.lock()), init());
+            assert_eq!(maybe_unwrap(m.replace(value())), init());
+            assert_eq!(*maybe_unwrap(m.lock()), value());
         }
 
         inner(|| NonCopy(10), || NonCopy(20));
@@ -257,8 +258,8 @@ nonpoison_and_poison_unwrap_test!(
         let arc2 = Arc::new(Mutex::new(arc));
         let (tx, rx) = channel();
         let _t = thread::spawn(move || {
-            let lock = maybe_unwrap!(arc2.lock());
-            let lock2 = maybe_unwrap!(lock.lock());
+            let lock = maybe_unwrap(arc2.lock());
+            let lock2 = maybe_unwrap(lock.lock());
             assert_eq!(*lock2, 1);
             tx.send(()).unwrap();
         });
@@ -273,12 +274,12 @@ nonpoison_and_poison_unwrap_test!(
 
         let mutex: &Mutex<[i32]> = &Mutex::new([1, 2, 3]);
         {
-            let b = &mut *maybe_unwrap!(mutex.lock());
+            let b = &mut *maybe_unwrap(mutex.lock());
             b[0] = 4;
             b[2] = 5;
         }
         let comp: &[i32] = &[4, 2, 5];
-        assert_eq!(&*maybe_unwrap!(mutex.lock()), comp);
+        assert_eq!(&*maybe_unwrap(mutex.lock()), comp);
     }
 );
 
@@ -289,16 +290,18 @@ nonpoison_and_poison_unwrap_test!(
 
         let arr = [0; 4];
         let lock = Mutex::new(arr);
-        let guard = maybe_unwrap!(lock.lock());
+        let guard = maybe_unwrap(lock.lock());
         let guard = MutexGuard::map(guard, |arr| &mut arr[..2]);
         let mut guard = MappedMutexGuard::map(guard, |slice| &mut slice[1..]);
         assert_eq!(guard.len(), 1);
         guard[0] = 42;
         drop(guard);
-        assert_eq!(*maybe_unwrap!(lock.lock()), [0, 42, 0, 0]);
+        assert_eq!(*maybe_unwrap(lock.lock()), [0, 42, 0, 0]);
     }
 );
 
+// Ensures that both mutex types are able to be locked even after threads that hold the guards
+// panic. This should be true even for the `nonpoison::Mutex`.
 #[cfg_attr(not(panic = "unwind"), ignore = "test requires unwinding support")]
 nonpoison_and_poison_unwrap_test!(
     name: test_panics,
@@ -308,21 +311,21 @@ nonpoison_and_poison_unwrap_test!(
         let mutex = Mutex::new(42);
 
         let catch_unwind_result1 = panic::catch_unwind(AssertUnwindSafe(|| {
-            let _guard1 = maybe_unwrap!(mutex.lock());
+            let _guard1 = maybe_unwrap(mutex.lock());
 
             panic!("test panic with mutex once");
         }));
         assert!(catch_unwind_result1.is_err());
 
         let catch_unwind_result2 = panic::catch_unwind(AssertUnwindSafe(|| {
-            let _guard2 = maybe_unwrap!(mutex.lock());
+            let _guard2 = maybe_unwrap(mutex.lock());
 
             panic!("test panic with mutex twice");
         }));
         assert!(catch_unwind_result2.is_err());
 
         let catch_unwind_result3 = panic::catch_unwind(AssertUnwindSafe(|| {
-            let _guard3 = maybe_unwrap!(mutex.lock());
+            let _guard3 = maybe_unwrap(mutex.lock());
 
             panic!("test panic with mutex thrice");
         }));
@@ -344,14 +347,14 @@ nonpoison_and_poison_unwrap_test!(
             }
             impl Drop for Unwinder {
                 fn drop(&mut self) {
-                    *maybe_unwrap!(self.i.lock()) += 1;
+                    *maybe_unwrap(self.i.lock()) += 1;
                 }
             }
             let _u = Unwinder { i: arc2 };
             panic!();
         })
         .join();
-        let lock = maybe_unwrap!(arc.lock());
+        let lock = maybe_unwrap(arc.lock());
         assert_eq!(*lock, 2);
     }
 );
